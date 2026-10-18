@@ -25,9 +25,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // suppressHydrationWarning: extensões do navegador (ex.: BRy Signer) adicionam
+    // atributos no <html> antes do React carregar. Isso ignora só os atributos
+    // desta tag, não esconde erros dos componentes de dentro.
     <html
       lang="pt-BR"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
