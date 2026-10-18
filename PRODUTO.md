@@ -140,6 +140,30 @@ class ProvedorIA(Protocol):
 1. **MVP:** o glossário de um livro é pequeno (centenas de verbetes), então vai **inteiro no prompt**, sem busca vetorial.
 2. **Quando o glossário crescer:** pgvector com embeddings geradas **localmente e de graça** (sentence-transformers, em Python).
 
+### Agentes
+
+**Chamada única x agente:**
+- **Chamada única:** o código define os passos e a IA só responde (ex.: "explique este trecho" com o glossário junto).
+- **Agente:** a IA recebe um objetivo e **ferramentas** (funções do backend) e decide quais chamar, em que ordem e quando parar.
+
+**Regra para escolher:** se os passos podem ser escritos no código com antecedência, usar **chamada única** (mais barata, rápida e previsível). Usar **agente** quando os passos dependem do que vai sendo descoberto.
+
+| Agente | O que faz | Ferramentas | Quando |
+|---|---|---|---|
+| **Assistente de leitura** | Responde perguntas sobre o livro sem spoiler e mantém o glossário | `buscar_glossario`, `buscar_capturas_ate(pagina)`, `adicionar_ao_glossario` | Etapa 4 |
+| **Recomendador** | "O que leio depois?", com base na estante, nas notas e no orçamento | `ver_estante`, `buscar_livros`, `ver_preco` | Depois do beta |
+| **Caçador de ofertas** | Monitora a lista de desejos e só avisa quando vale a pena, explicando o porquê ("menor preço em 90 dias") | `historico_preco`, `ofertas_atuais`, `enviar_alerta` | Depois do alerta simples (Etapa 3) |
+| **Moderador do clube** | Oculta mensagens com spoiler para quem ainda não chegou naquele capítulo | `capitulo_do_usuario`, `ocultar_mensagem` | Junto com o clube (Etapa 5) |
+
+**Princípios:**
+- **Regras críticas ficam nas ferramentas (código), e não só no prompt.** Ex.: `buscar_capturas_ate(pagina)` filtra no SQL (`WHERE pagina <= :pagina_atual`). Mesmo que o modelo "queira", ele não tem acesso ao que vem depois. Um prompt pode ser desobedecido; um `WHERE`, não.
+- **Ferramentas só agem sobre os dados do próprio usuário**: o `user_id` vem da sessão autenticada, nunca de um argumento escolhido pelo modelo.
+- **Ações com efeito** (enviar alerta, ocultar mensagem) têm limites no código (ex.: no máximo 1 alerta por livro por dia).
+- **Limite de passos** por execução e registro de tokens, porque um agente faz várias chamadas por pergunta e custa algumas vezes mais que uma chamada única.
+- **Ferramentas são funções Python normais**, testadas com Pytest. O provedor `mock` simula as decisões do modelo para testar o ciclo do agente sem custo.
+
+**Impacto na camada de IA:** a interface `ProvedorIA` precisa suportar **tool use** (chamada de ferramentas). Na API do Claude isso é nativo (o SDK de Python tem um "Tool Runner" que executa o ciclo do agente); no Ollama, só alguns modelos locais suportam.
+
 ### Modelo de dados inicial (rascunho)
 
 - `users`: id, nome, e-mail, plano, preferências
@@ -160,10 +184,11 @@ class ProvedorIA(Protocol):
 | **1. Estante + PWA** (2 sem.) | Login, busca, estante, progresso, app instalável | React, TS, PWA |
 | **2. Meta + card** (1 sem.) | Metas, estatísticas simples, gerar e compartilhar imagem | Geração de imagem, Web Share |
 | **3. Comprar + alerta** (2 sem.) | Ofertas com afiliado, alerta de preço, push | Web Push, integração com afiliados |
-| **4. Assistente sem spoiler** (3 sem.) | Camada `ProvedorIA` (Ollama + mock + Claude); foto ou trecho → explicação, glossário, "onde parei" | Visão, prompts, adapter pattern, custo de IA |
+| **4. Assistente sem spoiler** (3 sem.) | Camada `ProvedorIA` (Ollama + mock + Claude) com tool use; **assistente como agente** com ferramentas filtradas por página; foto ou trecho → explicação, glossário, "onde parei" | Visão, prompts, **agentes e tool use**, adapter pattern, custo de IA |
 | **— Lançamento beta —** | 20 a 50 leitores convidados (amigos, booktok, grupos de leitura) | Feedback real |
-| 5. Clube por capítulo | Depois do beta | Tempo real, moderação |
-| 6. Premium | Depois de medir uso da IA | Pagamentos (Stripe ou Mercado Pago) |
+| 5. Clube por capítulo | Depois do beta, com agente moderador de spoiler | Tempo real, moderação |
+| 6. Agentes recomendador e caçador de ofertas | Depois do beta | Agentes com várias ferramentas, ações com efeito |
+| 7. Premium | Depois de medir uso da IA | Pagamentos (Stripe ou Mercado Pago) |
 
 Prazo total estimado: **9 a 10 semanas** em paralelo com o trabalho.
 
@@ -181,7 +206,8 @@ Prazo total estimado: **9 a 10 semanas** em paralelo com o trabalho.
 |---|---|
 | Custo da IA crescer mais rápido que a receita | Limite no plano gratuito, cache de respostas, Haiku por padrão, limite de gasto no Console, desenvolvimento com Ollama e mock |
 | Modelo local fraco mascarar a qualidade real | Validar prompts no Claude antes de codar; testar o beta já com Claude |
-| Assistente dar spoiler | RAG só com páginas capturadas e instrução rígida no prompt; testar com livros conhecidos |
+| Assistente dar spoiler | Ferramentas do agente filtram por página no SQL; RAG só com páginas capturadas; instrução no prompt como reforço; testar com livros conhecidos |
+| Agente fazer passos demais (custo e lentidão) ou agir errado | Limite de passos por execução; ações com efeito limitadas no código; `user_id` sempre da sessão |
 | Perder conta de afiliada | Usar APIs e feeds oficiais; ler os termos de cada programa |
 | PA-API da Amazon exige vendas mínimas para liberar e manter acesso | Começar por outras lojas e feeds e usar links simples da Amazon até ter volume |
 | Push limitado no iPhone (só com o app instalado na tela inicial) | Tela explicando como instalar; e-mail como alternativa |
