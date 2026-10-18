@@ -1,0 +1,45 @@
+# Sobe o ambiente de desenvolvimento inteiro: docker compose up
+# O frontend (web) roda fora do Docker com "npm run dev": é mais rápido para editar.
+
+services:
+  db:
+    image: pgvector/pgvector:pg17  # Postgres que já vem com a extensão pgvector (para o RAG)
+    environment:
+      POSTGRES_USER: leitura
+      POSTGRES_PASSWORD: leitura
+      POSTGRES_DB: leitura
+    ports:
+      - "5432:5432"
+    volumes:
+      - dados_db:/var/lib/postgresql/data  # os dados sobrevivem a um "docker compose down"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leitura"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine  # fila dos jobs (alerta de preço) e cache
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      # Dentro da rede do Docker, cada serviço é encontrado pelo nome (db, redis),
+      # e não por "localhost".
+      DATABASE_URL: postgresql://leitura:leitura@db:5432/leitura
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/code  # espelha o código: salvou o arquivo, o --reload reinicia a API
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  dados_db:

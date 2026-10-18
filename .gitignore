@@ -1,0 +1,15 @@
+# Segredos
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Editores e sistema
+.vscode/
+.idea/
+.DS_Store
